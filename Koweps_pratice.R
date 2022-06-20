@@ -98,9 +98,214 @@ ggplot(data = age_income, aes(x = age, y = mean_income)) + geom_line()
 
 #### 3. 연령대에 따른 월급 차이 ####
 
+# 우리가 이전에 만든 age 파생변수를 사용한다.
+summary(welfare$age)
+# age 그룹(young, middle, old)을 만든다.
+welfare <- welfare %>%
+  mutate(ageg = ifelse(age < 30, "young", ifelse(age < 59, "middle", "old")))
+# ageg의 빈도 테이블로 만들어보자.
+qplot(welfare$ageg)
+
+# income에 대한 전처리도 이미 이전에 한 바가 있다.
+class(welfare$income)
+summary(welfare$income)
+
+ageg_income <- welfare %>%
+  filter(!is.na(income)) %>%
+  group_by(ageg) %>%
+  summarise(mean_income = mean(income))
+ageg_income
+
+ggplot(data = ageg_income, aes(x = ageg, y = mean_income)) + geom_col() +
+  scale_x_discrete(limits = c("young", "middle", "old")) # "young", "middle", "old"으로 바로잡기
+# 또는 아래와 같이 income을 기준으로 순서를 잡을 수도 있다.
+ggplot(data = ageg_income, aes(x = reorder(ageg, mean_income), y = mean_income)) + geom_col()
+
 #### 4. 연령대 및 성별 월급 차이 ####
+
+sex_income = welfare %>%
+  filter(!is.na(income)) %>%
+  group_by(ageg, sex) %>%
+  summarise(mean_income = mean(income))
+sex_income
+
+ggplot(data = sex_income, aes(x = ageg, y = mean_income, fill = sex)) +geom_col() +
+  scale_x_discrete(limits = c("young", "middle", "old"))
+
+#근데 위의 표는 헷갈리니까 position = "dodge"를 추가해준다.
+ggplot(data = sex_income, aes(x = ageg, y = mean_income, fill = sex)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(limits = c("young", "middle", "old"))
+# 근제 조금 더 세밀하게 연령과 성별에 따른 차이를 보자.(위에서는 연령그룹과 성별했음)
+sex_age <- welfare %>%
+  filter(!is.na(income)) %>%
+  group_by(age, sex) %>%
+  summarise(mean_income = mean(income))
+sex_age
+# 여기서는 geom_line을 사용하는 것이 합리적임
+ggplot(data = sex_age, aes(x = age, y = mean_income, col = sex)) + geom_line()
+
+
+
 #### 5. 직업별 월급 차이 ####
+class(welfare$code_job)
+table(welfare$code_job)
+# codebook의 직업 코드 데이터 읽어오기
+library(readxl)
+list_job = read_excel("Koweps_Codebook.xlsx", col_names = T, sheet = 2)
+list_job
+# welfare의 job과 join
+welfare <- left_join(welfare, list_job, id = "code_job")
+
+welfare %>%
+  filter(!is.na(code_job)) %>%
+  select(code_job, job) %>%
+  head(6)
+
+job_income <- welfare %>%
+  filter(!is.na(code_job) & !is.na(job)) %>%
+  group_by(job) %>%
+  summarise(mean_income = mean(income))
+View(job_income)
+
+# 월급을 내림차순 정렬, 상위 10개 추출
+top10 <- job_income %>%
+  arrange(desc(mean_income)) %>%
+  head(10)
+top10
+
+ggplot(data = top10, aes(x = reorder(job, mean_income), y = mean_income)) + geom_col() +
+  coord_flip()# 얘를 추가하면 글씨가 쭉 보이게 뒤집힌다.
+
+# 월급을 내림차순 정렬, 하위 10개 추출
+bottom10 <- job_income %>%
+  arrange(mean_income) %>%
+  head(10)
+bottom10
+
+ggplot(data = bottom10, aes(x = reorder(job, -mean_income), y = mean_income)) + geom_col() +
+  coord_flip() + ylim(0, 850)
+
+
 #### 6. 성별 직업 빈도 ####
+job_male <- welfare %>%
+  filter(!is.na(job) & sex == "male") %>%
+  group_by(job) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  head(10)
+job_male
+
+job_female <- welfare %>%
+  filter(!is.na(job) & sex == "female") %>%
+  group_by(job) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  head(10)
+job_female
+
+ggplot(data = job_male, aes(x = reorder(job, n), y = n)) + geom_col() + coord_flip()
+
 #### 7. 종교 유무에 따른 이혼율 ####
-#### 8. 지역별 연령대 비율####
-##
+class(welfare$religion)
+class(welfare$marriage)
+table(welfare$marriage)
+welfare$religion <- ifelse(welfare$religion == 1, "YES", "NO")
+qplot(welfare$religion)
+
+table(welfare$marriage)
+welfare$group_marraige <- ifelse(welfare$marriage == 1, "marriage",
+                                 ifelse(welfare$marriage == 3, "divorce", NA))
+table(welfare$group_marraige)
+table(is.na(welfare$group_marraige))
+qplot(welfare$group_marraige)
+
+#이제 종교 유무에 따른 이혼율을 구해보자.
+religion_marriage <- welfare %>%
+  filter(!is.na(group_marraige)) %>%
+  group_by(religion, group_marraige) %>%
+  summarise(n = n()) %>%
+  mutate(tot_group = sum(n)) %>%
+  mutate(pct = round(n/tot_group*100, 1))
+religion_marriage
+
+divorce <- religion_marriage %>%
+  filter(group_marriage == "divorce") %>%
+  select(religion, pct)
+
+## 연령대별 이혼률
+ageg_marriage <- welfare %>%
+  filter(!is.na(group_marraige)) %>%
+  group_by(ageg, group_marraige) %>%
+  summarise(n = n()) %>%
+  mutate(tot_group = sum(n)) %>%
+  mutate(pct = round(n/tot_group*100, 1))
+ageg_marriage
+
+ageg_divorce <- ageg_marriage %>%
+  filter(ageg != "young" & group_marraige == "divorce") %>%
+  select(ageg, pct)
+ageg_divorce
+ggplot(data = ageg_divorce, aes(x=ageg, y = pct)) + geom_col()
+
+## 연령대 및 종교에 따른 이혼률
+ageg_religion_magrriage <- welfare %>%
+  filter(!is.na(group_marraige) & ageg != "young") %>%
+  group_by(ageg, religion, group_marraige) %>%
+  summarize(n = n()) %>%
+  mutate(tot_group = sum(n)) %>%
+  mutate(pct = round(n/tot_group*100, 1))
+ageg_religion_magrriage
+
+df_divorce <- ageg_religion_magrriage %>%
+  filter(group_marraige == "divorce") %>%
+  select(ageg, religion, pct)
+df_divorce
+
+ggplot(data = df_divorce, aes(x = ageg, y = pct, fill = religion)) + geom_col(position = "dodge")
+#### 8. 지역별 연령대 비율 ####
+
+class(welfare$code_region)
+table(welfare$code_region)
+list_rigion <- data.frame(code_region = c(1:7), region = c("서울", 
+                                                           "수도권(인천/경기)", 
+                                                           "부산/경남/울산",
+                                                           "대구/경북",
+                                                           "대전/충남",
+                                                           "강원/충북",
+                                                           "광주/전남/전북/제주도"))
+
+welfare <- left_join(welfare, list_rigion, id = "code_region")
+
+data <- welfare %>%
+  filter(!is.na(region) & !is.na(age))
+group_by(region, age) %>%
+  summarise(n = n())
+
+welfare %>%
+  select(code_region, region) %>%
+  head
+
+region_ageg <- welfare %>%
+  group_by(region, ageg) %>%
+  summarise(n = n()) %>%
+  mutate(tot_group = sum(n)) %>%
+  mutate(pct = round(n/tot_group*100, 2))
+region_ageg
+ggplot(data = region_ageg, aes(x=region, y = pct, fill = ageg)) + geom_col() + coord_flip()
+# 위의 표를 노년이 많은 순으로 정렬
+list_order_old <- region_ageg %>%
+  filter(ageg == "old") %>%
+  arrange(pct)
+list_order_old
+
+order <- list_order_old$region
+
+ggplot(data = region_ageg, aes(x = region, y = pct, fill = ageg)) + geom_col() + coord_flip() +
+  scale_x_discrete(limits = order)
+
+region_ageg$ageg <- factor(region_ageg$ageg, level = c("old", "middle", "young"))
+class(region_ageg$ageg)
+levels(region_ageg$ageg)
+ggplot(data = region_ageg, aes(x = region, y = pct, fill = ageg)) + geom_col() +
+  coord_flip() +scale_x_discrete(limits=order)
